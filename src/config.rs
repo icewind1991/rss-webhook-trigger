@@ -1,5 +1,5 @@
 use color_eyre::{eyre::WrapErr, Result};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::fs::read_to_string;
 use tokio::time::Duration;
 
