@@ -28,6 +28,8 @@ async fn main() -> Result<()> {
     let config = Config::from_file(&file)?;
     let mut fetcher = FeedFetcher::default();
 
+    println!("Running rss trigger for {} feeds", config.feed.len());
+
     loop {
         for feed in config.feed.iter() {
             match fetcher.is_feed_updated(&feed.feed).await {
