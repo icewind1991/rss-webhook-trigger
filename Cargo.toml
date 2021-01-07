@@ -1,9 +1,13 @@
 [package]
-name = "docker-rss-trigger"
+name = "rss-webhook-trigger"
 version = "0.1.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+rss = "1.10"
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5"
+color-eyre = "0.5"

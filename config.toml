@@ -1,0 +1,5 @@
+interval = 60
+
+[[feed]]
+feed = "https://www.teamfortress.com/rss.xml"
+hook = "https://hub.docker.com/api/build/v1/source/b6176fa8-7163-45c7-b032-f63b65587481/trigger/85ce8dd5-7fff-400a-b509-3a28ef200267/call/"
