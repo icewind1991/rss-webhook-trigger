@@ -34,8 +34,15 @@ async fn main() -> Result<()> {
         for feed in config.feed.iter() {
             match fetcher.is_feed_updated(&feed.feed).await {
                 Ok(true) => {
-                    println!("Trigering hook for {}", feed.feed);
-                    fetcher.client.post(&feed.hook).send().await?;
+                    println!("Triggering hook for {}", feed.feed);
+                    let mut req = fetcher.client.post(&feed.hook);
+                    for (key, value) in &feed.headers {
+                        req = req.header(key, value);
+                    }
+                    if !feed.body.is_null() {
+                        req = req.json(&feed.body);
+                    }
+                    req.send().await?;
                 }
                 Err(e) => eprintln!("{:#}", e),
                 Ok(false) => {}

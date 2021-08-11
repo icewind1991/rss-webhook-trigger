@@ -2,6 +2,8 @@ use color_eyre::{eyre::WrapErr, Result};
 use serde::Deserialize;
 use std::fs::read_to_string;
 use tokio::time::Duration;
+use std::collections::HashMap;
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -13,6 +15,10 @@ pub struct Config {
 pub struct FeedConfig {
     pub feed: String,
     pub hook: String,
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub body: Value,
 }
 
 impl Config {
