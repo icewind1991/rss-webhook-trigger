@@ -42,7 +42,9 @@ async fn main() -> Result<()> {
                     if !feed.body.is_null() {
                         req = req.json(&feed.body);
                     }
-                    req.send().await?;
+                    if let Err(e) = req.send().await?.error_for_status() {
+                        eprintln!("{:#}", e);
+                    }
                 }
                 Err(e) => eprintln!("{:#}", e),
                 Ok(false) => {}
