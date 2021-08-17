@@ -16,6 +16,7 @@ use tokio::select;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
     let mut args = std::env::args();
     let bin = args.next().unwrap();
 
