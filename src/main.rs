@@ -61,6 +61,7 @@ async fn main_loop(config: Config) {
                         req = req.json(&feed.body);
                         debug!("setting body '{:?}'", feed.body);
                     }
+                    debug!("request '{:?}'", req);
                     if let Err(e) = req.send().await.and_then(|res| res.error_for_status()) {
                         eprintln!("{:#}", e);
                     }
