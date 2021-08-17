@@ -11,6 +11,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use tokio::time::sleep;
+use tokio::signal::ctrl_c;
+use tokio::select;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -26,9 +28,22 @@ async fn main() -> Result<()> {
     };
 
     let config = Config::from_file(&file)?;
-    let mut fetcher = FeedFetcher::default();
 
     println!("Running rss trigger for {} feeds", config.feed.len());
+
+    let ctrl_c = async { ctrl_c().await.ok(); };
+
+    select! {
+        _ = ctrl_c => {},
+        _ = main_loop(config) => {
+            println!("more_async_work() completed first")
+        }
+    };
+    Ok(())
+}
+
+async fn main_loop(config: Config) {
+    let mut fetcher = FeedFetcher::default();
 
     loop {
         for feed in config.feed.iter() {
@@ -42,7 +57,7 @@ async fn main() -> Result<()> {
                     if !feed.body.is_null() {
                         req = req.json(&feed.body);
                     }
-                    if let Err(e) = req.send().await?.error_for_status() {
+                    if let Err(e) = req.send().await.and_then(|res| res.error_for_status()) {
                         eprintln!("{:#}", e);
                     }
                 }
