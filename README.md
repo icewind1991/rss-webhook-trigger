@@ -19,4 +19,6 @@ hook = "https://hook.example.com/hook1/call"
 [[feed]]
 feed = "https://example.com/feed2.xml"
 hook = "https://hook.example.com/hook2/call"
+headers = { authorization = "...." }
+body = { event_type = "build" }
 ```
