@@ -1,6 +1,6 @@
 mod config;
 
-use crate::config::Config;
+use crate::config::{Config, FeedConfig};
 use color_eyre::{
     eyre::{eyre, WrapErr},
     Result,
@@ -51,20 +51,7 @@ async fn main_loop(config: Config) {
         for feed in config.feed.iter() {
             match fetcher.is_feed_updated(&feed.feed).await {
                 Ok(true) => {
-                    println!("Triggering hook for {}", feed.feed);
-                    let mut req = fetcher.client.post(&feed.hook);
-                    for (key, value) in &feed.headers {
-                        req = req.header(key, value);
-                        debug!("setting header '{}' = '{}'", key, value);
-                    }
-                    if !feed.body.is_null() {
-                        req = req.json(&feed.body);
-                        debug!("setting body '{:?}'", feed.body);
-                    }
-                    debug!("request '{:?}'", req);
-                    if let Err(e) = req.send().await.and_then(|res| res.error_for_status()) {
-                        eprintln!("{:#}", e);
-                    }
+                    trigger(&fetcher.client, feed).await;
                 }
                 Err(e) => eprintln!("{:#}", e),
                 Ok(false) => {}
@@ -72,6 +59,21 @@ async fn main_loop(config: Config) {
         }
 
         sleep(config.interval()).await;
+    }
+}
+
+async fn trigger(client: &Client, feed: &FeedConfig) {
+    println!("Triggering hook for {}", feed.feed);
+    let mut req = client.post(&feed.hook).header("user-agent", "rss-webhook-trigger");
+    for (key, value) in &feed.headers {
+        req = req.header(key, value);
+    }
+    if !feed.body.is_null() {
+        req = req.json(&feed.body);
+    }
+    debug!("request {:?}", req);
+    if let Err(e) = req.send().await.and_then(|res| res.error_for_status()) {
+        eprintln!("{:#}", e);
     }
 }
 
