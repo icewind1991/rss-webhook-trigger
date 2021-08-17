@@ -13,6 +13,7 @@ use std::hash::{Hash, Hasher};
 use tokio::time::sleep;
 use tokio::signal::ctrl_c;
 use tokio::select;
+use log::debug;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -54,9 +55,11 @@ async fn main_loop(config: Config) {
                     let mut req = fetcher.client.post(&feed.hook);
                     for (key, value) in &feed.headers {
                         req = req.header(key, value);
+                        debug!("setting header '{}' = '{}'", key, value);
                     }
                     if !feed.body.is_null() {
                         req = req.json(&feed.body);
+                        debug!("setting body '{:?}'", feed.body);
                     }
                     if let Err(e) = req.send().await.and_then(|res| res.error_for_status()) {
                         eprintln!("{:#}", e);

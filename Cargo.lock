@@ -760,6 +760,7 @@ version = "0.1.0"
 dependencies = [
  "color-eyre",
  "env_logger",
+ "log",
  "reqwest",
  "rss",
  "serde",
