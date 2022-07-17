@@ -84,7 +84,7 @@
                 Restart = "on-failure";
                 DynamicUser = true;
                 PrivateTmp = true;
-                ProtectSystem = "full";
+                ProtectSystem = "strict";
                 ProtectHome = true;
                 NoNewPrivileges = true;
                 PrivateDevices = true;
@@ -102,7 +102,6 @@
                 RestrictAddressFamilies = "AF_INET AF_INET6";
                 RestrictRealtime = true;
                 ProtectProc = "noaccess";
-                PrivateUsers = true;
                 SystemCallFilter = ["@system-service" "~@resources" "~@privileged"];
                 IPAddressDeny = "localhost link-local multicast";
               };
