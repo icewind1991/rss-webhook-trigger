@@ -1,4 +1,5 @@
 mod config;
+mod hub;
 
 use crate::config::{Config, FeedConfig};
 use color_eyre::{
@@ -107,6 +108,25 @@ impl FeedFetcher {
     }
 
     async fn get_feed_key(&self, feed: &str) -> Result<u64> {
+        if let Some(hub) = feed.strip_prefix("docker-hub://") {
+            if let Some((user, repo)) = hub.split_once('/') {
+                let tags = hub::tags(&self.client, user, repo).await?;
+                let mut hasher = DefaultHasher::new();
+                for tag in tags {
+                    tag.id.hash(&mut hasher);
+                    tag.last_updated.hash(&mut hasher);
+                }
+
+                Ok(hasher.finish())
+            } else {
+                return Err(eyre!("Invalid hub format {}", feed))
+            }
+        } else {
+            self.get_rss_feed_key(feed).await
+        }
+    }
+
+    async fn get_rss_feed_key(&self, feed: &str) -> Result<u64> {
         let content = self
             .client
             .get(feed)

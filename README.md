@@ -21,4 +21,9 @@ feed = "https://example.com/feed2.xml"
 hook = "https://hook.example.com/hook2/call"
 headers = { authorization = "...." }
 body = { event_type = "build" }
+
+# trigger on docker hub updates instead of rss feed update
+[[feed]]
+feed = "docker-hub://matrixdotorg/synapse"
+hook = "https://hook.example.com/hook2/call"
 ```
