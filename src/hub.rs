@@ -15,11 +15,11 @@ pub async fn tags(client: &Client, user: &str, repo: &str) -> Result<Vec<HubTag>
         .wrap_err("error with sending docker hub request")?;
     ensure!(
         !result.status().is_client_error(),
-        "error with sending docker hub request"
+        "error with sending docker hub request {}/{}: {}", user, repo, result.status()
     );
     ensure!(
         !result.status().is_server_error(),
-        "docker hub request returned an error"
+        "docker hub request returned an error {}/{}: {}", user, repo, result.status()
     );
     Ok(result
         .json::<HubTagResponse>()
