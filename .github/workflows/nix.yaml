@@ -69,6 +69,6 @@ jobs:
           authToken: '${{ secrets.ATTIC_TOKEN }}'
       - run: nix build .#docker
       - name: Push image
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main'
         run: |
           skopeo copy --dest-creds="${{ secrets.DOCKERHUB_USERNAME }}:${{ secrets.DOCKERHUB_TOKEN }}" "docker-archive:$(nix build .#docker --print-out-paths)" "docker://icewind1991/rss-webhook-trigger"
