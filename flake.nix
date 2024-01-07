@@ -81,7 +81,7 @@
         imports = [./module.nix];
         config = lib.mkIf config.services.rss-webhook-trigger.enable {
           nixpkgs.overlays = [self.overlays.default];
-          services.palantir.package = lib.mkDefault pkgs.rss-webhook-trigger;
+          services.rss-webhook-trigger.package = lib.mkDefault pkgs.rss-webhook-trigger;
         };
       };
     };
