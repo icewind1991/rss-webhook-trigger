@@ -3,6 +3,7 @@ name = "rss-webhook-trigger"
 version = "0.1.0"
 authors = ["Robin Appelman <robin@icewind.nl>"]
 edition = "2018"
+rust-version = "1.57.0"
 
 [dependencies]
 rss = "2.0.1"

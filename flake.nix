@@ -1,7 +1,12 @@
 {
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
+    nixpkgs.url = "nixpkgs/nixos-23.11";
     naersk.url = "github:nix-community/naersk";
+    naersk.inputs.nixpkgs.follows = "nixpkgs";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
+    rust-overlay.inputs.flake-utils.follows = "flake-utils";
   };
 
   outputs = {
@@ -9,104 +14,75 @@
     nixpkgs,
     flake-utils,
     naersk,
+    rust-overlay,
   }:
     flake-utils.lib.eachDefaultSystem (
       system: let
-        pkgs = nixpkgs.legacyPackages."${system}";
-        naersk-lib = naersk.lib."${system}";
-      in rec {
-        # `nix build`
-        packages.rss-webhook-trigger = naersk-lib.buildPackage {
-          pname = "rss-webhook-trigger";
-          root = ./.;
+        overlays = [
+          (import rust-overlay)
+          (import ./overlay.nix)
+        ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
         };
-        defaultPackage = packages.rss-webhook-trigger;
-        defaultApp = packages.rss-webhook-trigger;
 
-        # `nix develop`
-        devShell = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; [rustc cargo bacon cargo-edit cargo-outdated];
+        inherit (pkgs) lib rust-bin callPackage;
+        inherit (builtins) fromTOML readFile;
+
+        msrv = (fromTOML (readFile ./Cargo.toml)).package.rust-version;
+        toolchain = rust-bin.stable.latest.default;
+        msrvToolchain = rust-bin.stable."${msrv}".default;
+
+        naersk' = callPackage naersk {
+          rustc = toolchain;
+          cargo = toolchain;
+        };
+        msrvNaersk = callPackage naersk {
+          rustc = msrvToolchain;
+          cargo = msrvToolchain;
+        };
+
+        nearskOpt = {
+          pname = "rss-webhook-trigger";
+          root = pkgs.rss-webhook-trigger.src;
+        };
+      in rec {
+        packages = rec {
+          rss-webhook-trigger = pkgs.rss-webhook-trigger;
+          check = naersk'.buildPackage (nearskOpt
+            // {
+              mode = "check";
+            });
+          clippy = naersk'.buildPackage (nearskOpt
+            // {
+              mode = "clippy";
+            });
+          msrv = msrvNaersk.buildPackage (nearskOpt
+            // {
+              mode = "check";
+            });
+          docker = callPackage ./docker.nix {};
+          default = rss-webhook-trigger;
+        };
+
+        devShells.default = pkgs.mkShell {
+          nativeBuildInputs = with pkgs; [rustc cargo bacon cargo-edit cargo-outdated cargo-msrv];
         };
       }
     )
     // {
-      nixosModule = {
+      overlays.default = import ./overlay.nix;
+      nixosModules.default = {
+        pkgs,
         config,
         lib,
-        pkgs,
         ...
-      }:
-        with lib; let
-          cfg = config.services.rss-webhook-trigger;
-          format = pkgs.formats.toml {};
-          configFile = format.generate "trigger.toml" {
-            feed = cfg.hooks;
-          };
-        in {
-          options.services.rss-webhook-trigger = {
-            enable = mkEnableOption "Enables the rss-webhook-trigger service";
-
-            hooks = mkOption rec {
-              description = "Hook configuration";
-              type = types.listOf (types.submodule {
-                options = {
-                  feed = mkOption {
-                    type = types.str;
-                    description = "Source feed";
-                  };
-                  hook = mkOption {
-                    type = types.str;
-                    description = "hook url";
-                  };
-                  headers = mkOption {
-                    type = types.attrs;
-                    default = {};
-                    description = "headers to send";
-                  };
-                  body = mkOption {
-                    type = types.attrs;
-                    default = {};
-                    description = "body to send";
-                  };
-                };
-              });
-            };
-          };
-
-          config = mkIf cfg.enable {
-            systemd.services."rss-webhook-trigger" = let
-              pkg = self.defaultPackage.${pkgs.system};
-            in {
-              wantedBy = ["multi-user.target"];
-              script = "${pkg}/bin/rss-webhook-trigger ${configFile}";
-
-              serviceConfig = {
-                Restart = "on-failure";
-                DynamicUser = true;
-                PrivateTmp = true;
-                ProtectSystem = "strict";
-                ProtectHome = true;
-                NoNewPrivileges = true;
-                PrivateDevices = true;
-                ProtectClock = true;
-                CapabilityBoundingSet = true;
-                ProtectKernelLogs = true;
-                ProtectControlGroups = true;
-                SystemCallArchitectures = "native";
-                ProtectKernelModules = true;
-                RestrictNamespaces = true;
-                MemoryDenyWriteExecute = true;
-                ProtectHostname = true;
-                LockPersonality = true;
-                ProtectKernelTunables = true;
-                RestrictAddressFamilies = "AF_INET AF_INET6";
-                RestrictRealtime = true;
-                ProtectProc = "noaccess";
-                SystemCallFilter = ["@system-service" "~@resources" "~@privileged"];
-                IPAddressDeny = "localhost link-local multicast";
-              };
-            };
-          };
+      }: {
+        imports = [./module.nix];
+        config = lib.mkIf config.services.rss-webhook-trigger.enable {
+          nixpkgs.overlays = [self.overlays.default];
+          services.palantir.package = lib.mkDefault pkgs.rss-webhook-trigger;
         };
+      };
     };
 }
