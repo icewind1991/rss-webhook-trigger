@@ -119,7 +119,7 @@ impl FeedFetcher {
 
                 Ok(hasher.finish())
             } else {
-                return Err(eyre!("Invalid hub format {}", feed))
+                Err(eyre!("Invalid hub format {}", feed))
             }
         } else {
             self.get_rss_feed_key(feed).await

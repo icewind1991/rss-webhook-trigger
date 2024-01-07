@@ -43,7 +43,7 @@ pub struct HeaderVal(String);
 impl<'de> Deserialize<'de> for HeaderVal {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
         let raw = String::deserialize(deserializer)?;
-        let str = load_secret(raw).map_err(|e| D::Error::custom(e))?;
+        let str = load_secret(raw).map_err(D::Error::custom)?;
         Ok(HeaderVal(str))
     }
 }
@@ -58,7 +58,7 @@ impl TryFrom<&HeaderVal> for HeaderValue {
 
 fn load_secret(raw: String) -> Result<String, std::io::Error> {
     let path: &Path = raw.as_ref();
-    if raw.starts_with("/") && path.exists() {
+    if raw.starts_with('/') && path.exists() {
         let raw = read_to_string(raw)?;
         Ok(raw.trim().into())
     } else {
