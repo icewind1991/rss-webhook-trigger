@@ -22,6 +22,13 @@ hook = "https://hook.example.com/hook2/call"
 headers = { authorization = "...." }
 body = { event_type = "build" }
 
+# you can load header values from external files to keep your screts separate
+[[feed]]
+feed = "https://example.com/feed3.xml"
+hook = "https://hook.example.com/hook3/call"
+headers = { authorization = "/run/secrets/hook-auth" }
+body = { event_type = "build" }
+
 # trigger on docker hub updates instead of rss feed update
 [[feed]]
 feed = "docker-hub://matrixdotorg/synapse"
