@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::path::Path;
 use reqwest::header::{HeaderValue, InvalidHeaderValue};
+use secretfile::{load, SecretError};
 use serde::de::Error;
 use serde_json::Value;
 
@@ -56,11 +57,10 @@ impl TryFrom<&HeaderVal> for HeaderValue {
     }
 }
 
-fn load_secret(raw: String) -> Result<String, std::io::Error> {
+fn load_secret(raw: String) -> Result<String, SecretError> {
     let path: &Path = raw.as_ref();
-    if raw.starts_with('/') && path.exists() {
-        let raw = read_to_string(raw)?;
-        Ok(raw.trim().into())
+    if (raw.starts_with('/') && path.exists()) || raw.contains("$CREDENTIALS_DIRECTORY") {
+        load(&raw)
     } else {
         Ok(raw)
     }
