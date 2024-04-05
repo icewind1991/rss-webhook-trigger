@@ -7,10 +7,11 @@ use color_eyre::{
     Result,
 };
 use reqwest::Client;
-use rss::Channel;
+use syndication::Feed;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::str::FromStr;
 use tokio::time::sleep;
 use tokio::signal::ctrl_c;
 use tokio::select;
@@ -133,22 +134,32 @@ impl FeedFetcher {
             .send()
             .await
             .wrap_err_with(|| eyre!("Failed to load feed {}", feed))?
-            .bytes()
+            .text()
             .await
             .wrap_err_with(|| eyre!("Failed to load feed {}", feed))?;
-        let channel = Channel::read_from(content.as_ref())
-            .wrap_err_with(|| eyre!("Failed to parse feed {}", feed))?;
-        let item = channel.items.first().ok_or(eyre!("Empty feed"))?;
+        let channel = Feed::from_str(&content)
+            .map_err(|_| eyre!("Failed to parse feed {}", feed))?;
 
         let mut hasher = DefaultHasher::new();
-        if let Some(guid) = item.guid() {
-            guid.value.hash(&mut hasher);
-        } else if let Some(date) = item.pub_date() {
-            date.hash(&mut hasher);
-        } else if let Some(link) = item.link() {
-            link.hash(&mut hasher);
-        } else {
-            return Err(eyre!("No guid, pubDate or link set on feed item"));
+
+        match channel {
+            Feed::RSS(channel) => {
+                let item = channel.items.first().ok_or(eyre!("Empty feed"))?;
+
+                if let Some(guid) = item.guid() {
+                    guid.value.hash(&mut hasher);
+                } else if let Some(date) = item.pub_date() {
+                    date.hash(&mut hasher);
+                } else if let Some(link) = item.link() {
+                    link.hash(&mut hasher);
+                } else {
+                    return Err(eyre!("No guid, pubDate or link set on feed item"));
+                }
+            }
+            Feed::Atom(channel) => {
+                let item = channel.entries().first().ok_or(eyre!("Empty feed"))?;
+                item.id().hash(&mut hasher);
+            }
         }
 
         Ok(hasher.finish())
