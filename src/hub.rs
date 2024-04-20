@@ -3,7 +3,9 @@ use color_eyre::{eyre::ensure, Result};
 use reqwest::Client;
 use serde::Deserialize;
 use time::OffsetDateTime;
+use tracing::instrument;
 
+#[instrument(skip(client))]
 pub async fn tags(client: &Client, user: &str, repo: &str) -> Result<Vec<HubTag>> {
     let result = client
         .get(format!(

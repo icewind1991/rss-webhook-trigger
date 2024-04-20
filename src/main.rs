@@ -15,11 +15,11 @@ use std::str::FromStr;
 use tokio::time::sleep;
 use tokio::signal::ctrl_c;
 use tokio::select;
-use log::debug;
+use tracing::{debug, error, info, instrument};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::init();
+    tracing_subscriber::fmt::init();
     let mut args = std::env::args();
     let bin = args.next().unwrap();
 
@@ -39,9 +39,7 @@ async fn main() -> Result<()> {
 
     select! {
         _ = ctrl_c => {},
-        _ = main_loop(config) => {
-            println!("more_async_work() completed first")
-        }
+        _ = main_loop(config) => {}
     };
     Ok(())
 }
@@ -64,8 +62,9 @@ async fn main_loop(config: Config) {
     }
 }
 
+#[instrument(skip_all, fields(feed = feed.feed))]
 async fn trigger(client: &Client, feed: &FeedConfig) {
-    println!("Triggering hook for {}", feed.feed);
+    info!("Triggering hook");
     let mut req = client.post(&feed.hook).header("user-agent", "rss-webhook-trigger");
     for (key, value) in &feed.headers {
         req = req.header(key, value);
@@ -73,9 +72,9 @@ async fn trigger(client: &Client, feed: &FeedConfig) {
     if !feed.body.is_null() {
         req = req.json(&feed.body);
     }
-    debug!("request {:?}", req);
+    debug!(request = ?req, "sending trigger request");
     if let Err(e) = req.send().await.and_then(|res| res.error_for_status()) {
-        eprintln!("{:#}", e);
+        error!("{:#}", e);
     }
 }
 
@@ -86,6 +85,7 @@ pub struct FeedFetcher {
 }
 
 impl FeedFetcher {
+    #[instrument(skip(self))]
     pub async fn is_feed_updated(&mut self, feed: &str) -> Result<bool> {
         let new_key = self.get_feed_key(feed).await?;
 
@@ -108,6 +108,7 @@ impl FeedFetcher {
         })
     }
 
+    #[instrument(skip(self))]
     async fn get_feed_key(&self, feed: &str) -> Result<u64> {
         if let Some(hub) = feed.strip_prefix("docker-hub://") {
             if let Some((user, repo)) = hub.split_once('/') {
@@ -127,6 +128,7 @@ impl FeedFetcher {
         }
     }
 
+    #[instrument(skip(self))]
     async fn get_rss_feed_key(&self, feed: &str) -> Result<u64> {
         let content = self
             .client
