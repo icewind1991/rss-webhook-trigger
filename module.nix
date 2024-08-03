@@ -40,6 +40,12 @@ in {
       });
     };
 
+    log = mkOption {
+      type = types.str;
+      default = "INFO";
+      description = "Log level";
+    };
+
     package = mkOption {
       type = types.package;
       description = "package to use";
@@ -49,6 +55,10 @@ in {
   config = mkIf cfg.enable {
     systemd.services."rss-webhook-trigger" = {
       wantedBy = ["multi-user.target"];
+
+      environment = {
+        RUST_LOG = cfg.log;
+      };
 
       serviceConfig = {
         ExecStart = "${cfg.package}/bin/rss-webhook-trigger ${configFile}";

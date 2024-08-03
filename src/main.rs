@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     select! {
         _ = ctrl_c => {},
         _ = main_loop(config) => {}
-    };
+    }
     Ok(())
 }
 
@@ -49,11 +49,11 @@ async fn main_loop(config: Config) {
 
     loop {
         for feed in config.feed.iter() {
-            match fetcher.is_feed_updated(&feed.feed).await {
+            match fetcher.check_feed_updated(&feed.feed).await {
                 Ok(true) => {
                     trigger(&fetcher.client, feed).await;
                 }
-                Err(e) => eprintln!("{:#}", e),
+                Err(e) => error!(error = ?e, feed = feed.feed, "failed to check feed"),
                 Ok(false) => {}
             }
         }
@@ -86,11 +86,12 @@ pub struct FeedFetcher {
 
 impl FeedFetcher {
     #[instrument(skip(self))]
-    pub async fn is_feed_updated(&mut self, feed: &str) -> Result<bool> {
+    pub async fn check_feed_updated(&mut self, feed: &str) -> Result<bool> {
         let new_key = self.get_feed_key(feed).await?;
 
         Ok(match self.cache.get_mut(feed) {
             Some(cached) => {
+                debug!(cached, new_key, "checked existing feed");
                 if *cached != new_key {
                     *cached = new_key;
                     true
@@ -99,10 +100,10 @@ impl FeedFetcher {
                 }
             }
             None => {
+                debug!(feed, "new feed");
                 self.cache.insert(feed.into(), new_key);
 
-                // dont trigger the actions on start
-
+                // don't trigger the actions on start
                 false
             }
         })
