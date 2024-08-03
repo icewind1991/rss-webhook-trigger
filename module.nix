@@ -49,9 +49,9 @@ in {
   config = mkIf cfg.enable {
     systemd.services."rss-webhook-trigger" = {
       wantedBy = ["multi-user.target"];
-      script = "${cfg.package}/bin/rss-webhook-trigger ${configFile}";
 
       serviceConfig = {
+        ExecStart = "${cfg.package}/bin/rss-webhook-trigger ${configFile}";
         Restart = "on-failure";
         DynamicUser = true;
         PrivateTmp = true;

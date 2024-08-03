@@ -40,5 +40,4 @@ pub struct HubTag {
     pub id: u64,
     #[serde(with = "time::serde::rfc3339")]
     pub last_updated: OffsetDateTime,
-    pub name: String,
 }
