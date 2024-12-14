@@ -1,6 +1,6 @@
-{
-  dockerTools,
-  rss-webhook-trigger,
+{ dockerTools
+, rss-webhook-trigger
+,
 }:
 dockerTools.buildLayeredImage {
   name = "icewind1991/rss-webhook-trigger";
@@ -11,6 +11,6 @@ dockerTools.buildLayeredImage {
     dockerTools.caCertificates
   ];
   config = {
-    Cmd = ["rss-webhook-trigger"];
+    Cmd = [ "rss-webhook-trigger" ];
   };
 }

@@ -1,14 +1,14 @@
 use color_eyre::{eyre::WrapErr, Result};
-use serde::{Deserialize, Deserializer};
-use std::fs::read_to_string;
-use tokio::time::Duration;
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
-use std::path::Path;
 use reqwest::header::{HeaderValue, InvalidHeaderValue};
 use secretfile::{load, SecretError};
 use serde::de::Error;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
+use std::fs::read_to_string;
+use std::path::Path;
+use tokio::time::Duration;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -42,7 +42,10 @@ impl Config {
 pub struct HeaderVal(String);
 
 impl<'de> Deserialize<'de> for HeaderVal {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let raw = String::deserialize(deserializer)?;
         let str = load_secret(raw).map_err(D::Error::custom)?;
         Ok(HeaderVal(str))

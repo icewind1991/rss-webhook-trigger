@@ -46,7 +46,7 @@ A NixOS module is included and can be used like this:
   outputs = { self, nixpkgs, rss-webhook-trigger }: {
     nixosConfigurations.my-machine = nixpkgs.lib.nixosSystem {
       modules =
-        [ 
+        [
           rss-webhook-trigger.nixosModules.default
           {
             services.rss-webhook-trigger = {

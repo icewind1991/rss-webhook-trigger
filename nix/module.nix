@@ -1,16 +1,16 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
+{ config
+, lib
+, pkgs
+, ...
 }:
 with lib; let
   cfg = config.services.rss-webhook-trigger;
-  format = pkgs.formats.toml {};
+  format = pkgs.formats.toml { };
   configFile = format.generate "trigger.toml" {
     feed = cfg.hooks;
   };
-in {
+in
+{
   options.services.rss-webhook-trigger = {
     enable = mkEnableOption "Enables the rss-webhook-trigger service";
 
@@ -28,12 +28,12 @@ in {
           };
           headers = mkOption {
             type = types.attrs;
-            default = {};
+            default = { };
             description = "headers to send";
           };
           body = mkOption {
             type = types.attrs;
-            default = {};
+            default = { };
             description = "body to send";
           };
         };
@@ -54,7 +54,7 @@ in {
 
   config = mkIf cfg.enable {
     systemd.services."rss-webhook-trigger" = {
-      wantedBy = ["multi-user.target"];
+      wantedBy = [ "multi-user.target" ];
 
       environment = {
         RUST_LOG = cfg.log;
@@ -83,7 +83,7 @@ in {
         RestrictAddressFamilies = "AF_INET AF_INET6";
         RestrictRealtime = true;
         ProtectProc = "noaccess";
-        SystemCallFilter = ["@system-service" "~@resources" "~@privileged"];
+        SystemCallFilter = [ "@system-service" "~@resources" "~@privileged" ];
         IPAddressDeny = "localhost link-local multicast";
       };
     };
