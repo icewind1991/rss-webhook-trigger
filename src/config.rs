@@ -1,4 +1,3 @@
-use color_eyre::{eyre::WrapErr, Result};
 use reqwest::header::{HeaderValue, InvalidHeaderValue};
 use secretfile::{load, SecretError};
 use serde::de::Error;
@@ -9,6 +8,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fs::read_to_string;
 use std::path::Path;
 use tokio::time::Duration;
+use crate::error::ConfigError;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -27,10 +27,12 @@ pub struct FeedConfig {
 }
 
 impl Config {
-    pub fn from_file(path: &str) -> Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
+        let path = path.as_ref();
         let file = read_to_string(path)
-            .wrap_err_with(|| format!("Failed to open config file {}", path))?;
-        toml::from_str(&file).wrap_err_with(|| format!("Failed to open config file {}", path))
+            .map_err(|error| ConfigError::Read {error, path: path.into()})?;
+        toml::from_str(&file)
+            .map_err(|error| ConfigError::Parse {error, path: path.into()})
     }
 
     pub fn interval(&self) -> Duration {
@@ -55,7 +57,7 @@ impl<'de> Deserialize<'de> for HeaderVal {
 impl TryFrom<&HeaderVal> for HeaderValue {
     type Error = InvalidHeaderValue;
 
-    fn try_from(header: &HeaderVal) -> std::result::Result<Self, Self::Error> {
+    fn try_from(header: &HeaderVal) -> Result<Self, Self::Error> {
         header.0.as_str().try_into()
     }
 }

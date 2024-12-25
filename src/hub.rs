@@ -1,33 +1,37 @@
-use color_eyre::eyre::WrapErr;
-use color_eyre::{eyre::ensure, Result};
+use crate::error::HubError;
+use crate::fetcher::{CacheHeaders, FetchResponse};
 use reqwest::Client;
 use serde::Deserialize;
 use time::OffsetDateTime;
 use tracing::instrument;
 
 #[instrument(skip(client))]
-pub async fn tags(client: &Client, user: &str, repo: &str) -> Result<Vec<HubTag>> {
+pub async fn tags(
+    client: &Client,
+    user: &str,
+    repo: &str,
+    cache_headers: &CacheHeaders,
+) -> FetchResponse<Vec<HubTag>, HubError> {
     let result = client
         .get(format!(
             "https://hub.docker.com/v2/repositories/{}/{}/tags",
             user, repo
         ))
+        .headers(cache_headers.headers())
         .send()
-        .await
-        .wrap_err("error with sending docker hub request")?;
-    ensure!(
-        !result.status().is_client_error(),
-        "error with sending docker hub request {}/{}: {}", user, repo, result.status()
-    );
-    ensure!(
-        !result.status().is_server_error(),
-        "docker hub request returned an error {}/{}: {}", user, repo, result.status()
-    );
-    Ok(result
-        .json::<HubTagResponse>()
-        .await
-        .wrap_err("failed to parse hub response")?
-        .results)
+        .await;
+
+    FetchResponse::from_result(result)
+        .map_err(HubError::Network)
+        .check_status_code(HubError::ClientError, HubError::ServerError)
+        .map(|response| async {
+            response
+                .text()
+                .await
+                .map_err(HubError::Network)
+                .and_then(|text| serde_json::from_str::<HubTagResponse>(&text).map_err(HubError::Parse))
+                .map(|result| result.results)
+        }).await.flatten()
 }
 
 #[derive(Debug, Deserialize)]

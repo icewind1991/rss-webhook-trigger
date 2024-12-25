@@ -11,10 +11,11 @@ syndication = "0.5.0"
 reqwest = { version = "0.12.9", default-features = false, features = ["rustls-tls", "json"] }
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread", "signal"] }
 serde = { version = "1.0.216", features = ["derive"] }
-serde_json = "1.0.133"
+serde_json = "1.0.134"
 toml = "0.8.19"
-color-eyre = "0.6.3"
+main_error = "0.1.2"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.19"
 time = { version = "0.3.37", features = ["serde", "serde-well-known"] }
+thiserror = "2.0.9"
 secretfile = "0.1.0"

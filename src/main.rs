@@ -1,24 +1,27 @@
 mod config;
+mod error;
+mod fetcher;
 mod hub;
 
 use crate::config::{Config, FeedConfig};
-use color_eyre::{
-    eyre::{eyre, WrapErr},
-    Result,
-};
-use reqwest::Client;
-use syndication::Feed;
+use crate::error::{FetchError, FetchFeedError, HubError, ParseFeedError};
+use crate::fetcher::{next_fetch, CacheHeaders, FetchPlan, FetchResponse};
+use main_error::MainResult;
+use reqwest::{Client, Response};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::future::ready;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
-use tokio::time::sleep;
-use tokio::signal::ctrl_c;
+use std::time::{Duration};
+use syndication::Feed;
 use tokio::select;
-use tracing::{debug, error, info, instrument};
+use tokio::signal::ctrl_c;
+use tokio::time::sleep;
+use tracing::{debug, error, info, instrument, warn};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> MainResult {
     tracing_subscriber::fmt::init();
     let mut args = std::env::args();
     let bin = args.next().unwrap();
@@ -33,9 +36,11 @@ async fn main() -> Result<()> {
 
     let config = Config::from_file(&file)?;
 
-    println!("Running rss trigger for {} feeds", config.feed.len());
+    info!("Running rss trigger for {} feeds", config.feed.len());
 
-    let ctrl_c = async { ctrl_c().await.ok(); };
+    let ctrl_c = async {
+        ctrl_c().await.ok();
+    };
 
     select! {
         _ = ctrl_c => {},
@@ -45,7 +50,7 @@ async fn main() -> Result<()> {
 }
 
 async fn main_loop(config: Config) {
-    let mut fetcher = FeedFetcher::default();
+    let mut fetcher = FeedFetcher::new(config.interval());
 
     loop {
         for feed in config.feed.iter() {
@@ -65,7 +70,9 @@ async fn main_loop(config: Config) {
 #[instrument(skip_all, fields(feed = feed.feed))]
 async fn trigger(client: &Client, feed: &FeedConfig) {
     info!("Triggering hook");
-    let mut req = client.post(&feed.hook).header("user-agent", "rss-webhook-trigger");
+    let mut req = client
+        .post(&feed.hook)
+        .header("user-agent", "rss-webhook-trigger");
     for (key, value) in &feed.headers {
         req = req.header(key, value);
     }
@@ -78,93 +85,151 @@ async fn trigger(client: &Client, feed: &FeedConfig) {
     }
 }
 
-#[derive(Default)]
 pub struct FeedFetcher {
     client: Client,
+    base_interval: Duration,
     cache: HashMap<String, u64>,
+    fetch_plans: HashMap<String, FetchPlan>,
 }
 
 impl FeedFetcher {
-    #[instrument(skip(self))]
-    pub async fn check_feed_updated(&mut self, feed: &str) -> Result<bool> {
-        let new_key = self.get_feed_key(feed).await?;
+    pub fn new(interval: Duration) -> Self {
+        FeedFetcher {
+            client: Client::default(),
+            base_interval: interval,
+            cache: HashMap::default(),
+            fetch_plans: HashMap::default(),
+        }
+    }
 
-        Ok(match self.cache.get_mut(feed) {
-            Some(cached) => {
+    pub fn should_update(&self, feed: &str) -> bool {
+        self.fetch_plans.get(feed).filter(|plan| FetchPlan::elapsed(plan)).is_some()
+    }
+
+    #[instrument(skip(self))]
+    pub async fn check_feed_updated(&mut self, feed: &str) -> Result<bool, FetchError> {
+        if !self.should_update(feed) {
+            warn!("skipping feed util rate limited expires");
+            return Ok(false);
+        }
+        let plan = self.fetch_plans.remove(feed).unwrap_or_default();
+
+        let fetch_result = self.get_feed_key(feed, &plan.headers).await;
+        let new_key = match fetch_result.into_result() {
+            Ok((new_key, new_plan)) => {
+                self.fetch_plans.insert(feed.into(), next_fetch(self.base_interval, Some(new_plan)));
+                new_key
+            }
+            Err((err, new_plan)) => {
+                self.fetch_plans.insert(feed.into(), next_fetch(self.base_interval, Some(new_plan)));
+                return Err(err);
+            }
+        };
+
+        Ok(match (self.cache.get_mut(feed), new_key) {
+            (Some(cached), Some(new_key)) => {
                 debug!(cached, new_key, "checked existing feed");
-                if *cached != new_key {
+                if new_key != *cached {
                     *cached = new_key;
                     true
                 } else {
                     false
                 }
             }
-            None => {
+            (None, Some(new_key)) => {
                 debug!(feed, "new feed");
                 self.cache.insert(feed.into(), new_key);
 
                 // don't trigger the actions on start
                 false
             }
+            (_, None) => {
+                warn!("rate limited by server");
+                false
+            }
         })
     }
 
     #[instrument(skip(self))]
-    async fn get_feed_key(&self, feed: &str) -> Result<u64> {
+    async fn get_feed_key(
+        &self,
+        feed: &str,
+        cache_headers: &CacheHeaders,
+    ) -> FetchResponse<u64, FetchError> {
         if let Some(hub) = feed.strip_prefix("docker-hub://") {
             if let Some((user, repo)) = hub.split_once('/') {
-                let tags = hub::tags(&self.client, user, repo).await?;
-                let mut hasher = DefaultHasher::new();
-                for tag in tags {
-                    tag.id.hash(&mut hasher);
-                    tag.last_updated.hash(&mut hasher);
-                }
-
-                Ok(hasher.finish())
+                hub::tags(&self.client, user, repo, cache_headers)
+                    .await
+                    .map(|tags| {
+                        let mut hasher = DefaultHasher::new();
+                        for tag in tags {
+                            tag.id.hash(&mut hasher);
+                            tag.last_updated.hash(&mut hasher);
+                        }
+                        ready(hasher.finish())
+                    }).await
+                    .map_err(FetchError::Hub)
             } else {
-                Err(eyre!("Invalid hub format {}", feed))
+                FetchResponse::Error {
+                    error: HubError::InvalidFormat.into(),
+                    headers: CacheHeaders::default(),
+                }
             }
         } else {
-            self.get_rss_feed_key(feed).await
+            self.get_rss_feed_key(feed, cache_headers)
+                .await
+                .map_err(FetchError::Feed)
         }
     }
 
     #[instrument(skip(self))]
-    async fn get_rss_feed_key(&self, feed: &str) -> Result<u64> {
-        let content = self
+    async fn get_rss_feed_key(
+        &self,
+        feed: &str,
+        cache_headers: &CacheHeaders,
+    ) -> FetchResponse<u64, FetchFeedError> {
+        let response = self
             .client
             .get(feed)
+            .headers(cache_headers.headers())
             .send()
+            .await;
+
+        let plan_result = FetchResponse::from_result(response);
+        plan_result
+            .map_err(FetchFeedError::Network)
+            .check_status_code(FetchFeedError::ClientError, FetchFeedError::ServerError)
+            .map(parse_rss_response)
             .await
-            .wrap_err_with(|| eyre!("Failed to load feed {}", feed))?
-            .text()
-            .await
-            .wrap_err_with(|| eyre!("Failed to load feed {}", feed))?;
-        let channel = Feed::from_str(&content)
-            .map_err(|_| eyre!("Failed to parse feed {}", feed))?;
+            .flatten()
+    }
+}
 
-        let mut hasher = DefaultHasher::new();
+async fn parse_rss_response(response: Response) -> Result<u64, FetchFeedError> {
+    let content = response.text().await?;
+    let channel = Feed::from_str(&content).map_err(ParseFeedError::Parse)?;
 
-        match channel {
-            Feed::RSS(channel) => {
-                let item = channel.items.first().ok_or(eyre!("Empty feed"))?;
+    let mut hasher = DefaultHasher::new();
 
-                if let Some(guid) = item.guid() {
-                    guid.value.hash(&mut hasher);
-                } else if let Some(date) = item.pub_date() {
-                    date.hash(&mut hasher);
-                } else if let Some(link) = item.link() {
-                    link.hash(&mut hasher);
-                } else {
-                    return Err(eyre!("No guid, pubDate or link set on feed item"));
-                }
-            }
-            Feed::Atom(channel) => {
-                let item = channel.entries().first().ok_or(eyre!("Empty feed"))?;
-                item.id().hash(&mut hasher);
+    match channel {
+        Feed::RSS(channel) => {
+            let item = channel.items.first().ok_or(ParseFeedError::Empty)?;
+
+            if let Some(guid) = item.guid() {
+                guid.value.hash(&mut hasher);
+            } else if let Some(date) = item.pub_date() {
+                date.hash(&mut hasher);
+            } else if let Some(link) = item.link() {
+                link.hash(&mut hasher);
+            } else {
+                return Err(ParseFeedError::MissingKey.into());
             }
         }
-
-        Ok(hasher.finish())
+        Feed::Atom(channel) => {
+            let item = channel.entries().first().ok_or(ParseFeedError::Empty)?;
+            item.id().hash(&mut hasher);
+        }
     }
+
+    Ok(hasher.finish())
 }
