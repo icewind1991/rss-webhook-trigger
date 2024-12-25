@@ -1,3 +1,4 @@
+use crate::error::ConfigError;
 use reqwest::header::{HeaderValue, InvalidHeaderValue};
 use secretfile::{load, SecretError};
 use serde::de::Error;
@@ -8,7 +9,6 @@ use std::convert::{TryFrom, TryInto};
 use std::fs::read_to_string;
 use std::path::Path;
 use tokio::time::Duration;
-use crate::error::ConfigError;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -29,10 +29,14 @@ pub struct FeedConfig {
 impl Config {
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, ConfigError> {
         let path = path.as_ref();
-        let file = read_to_string(path)
-            .map_err(|error| ConfigError::Read {error, path: path.into()})?;
-        toml::from_str(&file)
-            .map_err(|error| ConfigError::Parse {error, path: path.into()})
+        let file = read_to_string(path).map_err(|error| ConfigError::Read {
+            error,
+            path: path.into(),
+        })?;
+        toml::from_str(&file).map_err(|error| ConfigError::Parse {
+            error,
+            path: path.into(),
+        })
     }
 
     pub fn interval(&self) -> Duration {

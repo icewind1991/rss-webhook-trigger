@@ -14,11 +14,14 @@ use std::future::ready;
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 use std::time::{Duration};
+use reqwest::header::{HeaderValue, USER_AGENT};
 use syndication::Feed;
 use tokio::select;
 use tokio::signal::ctrl_c;
 use tokio::time::sleep;
 use tracing::{debug, error, info, instrument, warn};
+
+const FETCHER_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"), "(", env!("CARGO_PKG_REPOSITORY"), ")");
 
 #[tokio::main]
 async fn main() -> MainResult {
@@ -192,6 +195,7 @@ impl FeedFetcher {
             .client
             .get(feed)
             .headers(cache_headers.headers())
+            .header(USER_AGENT, HeaderValue::from_static(FETCHER_USER_AGENT))
             .send()
             .await;
 

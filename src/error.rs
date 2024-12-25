@@ -1,6 +1,6 @@
+use reqwest::StatusCode;
 use std::path::PathBuf;
 use std::str::FromStr;
-use reqwest::StatusCode;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -34,7 +34,7 @@ pub enum ConfigError {
     },
     #[error("Error while parse config file {}: {:#}", path.display(), error)]
     Parse {
-        error:  toml::de::Error,
+        error: toml::de::Error,
         path: PathBuf,
     },
 }

@@ -1,9 +1,11 @@
 use crate::error::HubError;
 use crate::fetcher::{CacheHeaders, FetchResponse};
 use reqwest::Client;
+use reqwest::header::{HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use time::OffsetDateTime;
 use tracing::instrument;
+use crate::FETCHER_USER_AGENT;
 
 #[instrument(skip(client))]
 pub async fn tags(
@@ -18,6 +20,7 @@ pub async fn tags(
             user, repo
         ))
         .headers(cache_headers.headers())
+        .header(USER_AGENT, HeaderValue::from_static(FETCHER_USER_AGENT))
         .send()
         .await;
 
