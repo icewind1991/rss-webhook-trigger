@@ -15,10 +15,10 @@ pub async fn tags(
     cache_headers: &CacheHeaders,
 ) -> FetchResponse<Vec<HubTag>, HubError> {
     let result = client
-        .get(dbg!(format!(
+        .get(format!(
             "https://hub.docker.com/v2/repositories/{}/{}/tags",
             user, repo
-        )))
+        ))
         .headers(cache_headers.headers())
         .header(USER_AGENT, HeaderValue::from_static(FETCHER_USER_AGENT))
         .send()
