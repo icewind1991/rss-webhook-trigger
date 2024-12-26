@@ -29,6 +29,10 @@ impl FetchPlanInput {
             FetchPlanInput::WithCache { headers } => headers,
         }
     }
+
+    pub fn is_retry(&self) -> bool {
+        matches!(self, FetchPlanInput::Retry { .. })
+    }
 }
 
 #[derive(Default, Debug)]
@@ -126,6 +130,9 @@ pub enum FetchResponse<T, E> {
         headers: CacheHeaders,
         response: T,
     },
+    NotModified {
+        headers: CacheHeaders,
+    },
     Error {
         headers: CacheHeaders,
         error: E,
@@ -138,20 +145,24 @@ impl<T, E> FetchResponse<T, E> {
         match self {
             FetchResponse::Retry { time, headers } => FetchPlanInput::Retry { time, headers },
             FetchResponse::Ok { headers, .. } => FetchPlanInput::WithCache { headers },
+            FetchResponse::NotModified { headers, .. } => FetchPlanInput::WithCache { headers },
             FetchResponse::Error { headers, .. } => FetchPlanInput::WithCache { headers },
         }
     }
 
-    pub fn into_result(self) -> Result<(Option<T>, FetchPlanInput), (E, FetchPlanInput)> {
+    pub fn into_result(self) -> (Result<Option<T>, E>, FetchPlanInput) {
         match self {
             FetchResponse::Retry { time, headers } => {
-                Ok((None, FetchPlanInput::Retry { time, headers }))
+                (Ok(None), FetchPlanInput::Retry { time, headers })
             }
             FetchResponse::Ok { headers, response } => {
-                Ok((Some(response), FetchPlanInput::WithCache { headers }))
+                (Ok(Some(response)), FetchPlanInput::WithCache { headers })
+            }
+            FetchResponse::NotModified { headers } => {
+                (Ok(None), FetchPlanInput::WithCache { headers })
             }
             FetchResponse::Error { headers, error } => {
-                Err((error, FetchPlanInput::WithCache { headers }))
+                (Err(error), FetchPlanInput::WithCache { headers })
             }
         }
     }
@@ -172,6 +183,10 @@ impl<E> FetchResponse<Response, E> {
                         .unwrap_or(DEFAULT_BACKOFF);
                     FetchResponse::Retry {
                         time: Instant::now() + after + ONE_SEC,
+                        headers: cache_header,
+                    }
+                } else if response.status() == StatusCode::NOT_MODIFIED {
+                    FetchResponse::NotModified {
                         headers: cache_header,
                     }
                 } else {
@@ -227,6 +242,7 @@ impl<T, E> FetchResponse<T, E> {
                 headers,
                 response: f(response).await,
             },
+            FetchResponse::NotModified { headers } => FetchResponse::NotModified { headers },
             FetchResponse::Error { error, headers } => FetchResponse::Error { error, headers },
         }
     }
@@ -236,7 +252,8 @@ impl<T, E> FetchResponse<T, E> {
     {
         match self {
             FetchResponse::Retry { time, headers } => FetchResponse::Retry { time, headers },
-            FetchResponse::Ok { headers, response } => FetchResponse::Ok { headers, response },
+            FetchResponse::Ok { response, headers } => FetchResponse::Ok { response, headers },
+            FetchResponse::NotModified { headers } => FetchResponse::NotModified { headers },
             FetchResponse::Error { error, headers } => FetchResponse::Error {
                 error: f(error),
                 headers,
@@ -257,7 +274,11 @@ impl<T, E> FetchResponse<Result<T, E>, E> {
                 headers,
                 response: Err(error),
             } => FetchResponse::Error { error, headers },
-            FetchResponse::Error { error, headers } => FetchResponse::Error { error, headers },
+            FetchResponse::NotModified { headers } => FetchResponse::NotModified { headers },
+            FetchResponse::Error { error, headers } => FetchResponse::Error {
+                error,
+                headers,
+            },
         }
     }
 }

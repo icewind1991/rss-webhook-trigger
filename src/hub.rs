@@ -1,6 +1,6 @@
 use crate::error::HubError;
 use crate::fetcher::{CacheHeaders, FetchResponse};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client};
 use reqwest::header::{HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -28,9 +28,6 @@ pub async fn tags(
         .map_err(HubError::Network)
         .check_status_code(HubError::ClientError, HubError::ServerError)
         .map(|response| async {
-            if response.status() == StatusCode::NOT_MODIFIED {
-                return Ok(Vec::new());
-            }
             response
                 .text()
                 .await

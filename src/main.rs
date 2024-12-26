@@ -7,7 +7,7 @@ use crate::config::{Config, FeedConfig};
 use crate::error::{FetchError, FetchFeedError, HubError, ParseFeedError};
 use crate::fetcher::{next_fetch, CacheHeaders, FetchPlan, FetchResponse};
 use main_error::MainResult;
-use reqwest::{Client, Response, StatusCode};
+use reqwest::{Client, Response};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::future::ready;
@@ -121,40 +121,35 @@ impl FeedFetcher {
         let plan = self.fetch_plans.remove(feed).unwrap_or_default();
 
         let fetch_result = self.get_feed_key(feed, &plan.headers).await;
-        let new_key = match fetch_result.into_result() {
-            Ok((new_key, new_plan)) => {
-                self.fetch_plans.insert(feed.into(), next_fetch(self.base_interval, Some(new_plan)));
-                new_key
-            }
-            Err((err, new_plan)) => {
-                self.fetch_plans.insert(feed.into(), next_fetch(self.base_interval, Some(new_plan)));
-                return Err(err);
-            }
-        };
+        let (result, new_plan) = fetch_result.into_result();
+        let is_retry = new_plan.is_retry();
+        self.fetch_plans.insert(feed.into(), next_fetch(self.base_interval, Some(new_plan)));
+        let new_key = result?;
 
         Ok(match (self.cache.get_mut(feed), new_key) {
-            (Some(cached), Some(Some(new_key))) => {
+            (Some(cached), Some(new_key)) => {
                 debug!(cached, new_key, "checked existing feed");
                 if new_key != *cached {
                     *cached = new_key;
+                    info!("feed updated");
                     true
                 } else {
                     false
                 }
             }
-            (None, Some(Some(new_key))) => {
+            (None, Some(new_key)) => {
                 debug!(feed, "new feed");
                 self.cache.insert(feed.into(), new_key);
 
                 // don't trigger the actions on start
                 false
             }
-            (_, Some(None)) => {
-                debug!("not modified response");
+            (_, None) if is_retry => {
+                warn!("rate limited by server");
                 false
             }
             (_, None) => {
-                warn!("rate limited by server");
+                debug!("not modified");
                 false
             }
         })
@@ -165,21 +160,18 @@ impl FeedFetcher {
         &self,
         feed: &str,
         cache_headers: &CacheHeaders,
-    ) -> FetchResponse<Option<u64>, FetchError> {
+    ) -> FetchResponse<u64, FetchError> {
         if let Some(hub) = feed.strip_prefix("docker-hub://") {
             if let Some((user, repo)) = hub.split_once('/') {
                 hub::tags(&self.client, user, repo, cache_headers)
                     .await
                     .map(|tags| {
-                        if tags.is_empty() {
-                            return ready(None);
-                        }
                         let mut hasher = DefaultHasher::new();
                         for tag in tags {
                             tag.id.hash(&mut hasher);
                             tag.last_updated.hash(&mut hasher);
                         }
-                        ready(Some(hasher.finish()))
+                        ready(hasher.finish())
                     }).await
                     .map_err(FetchError::Hub)
             } else {
@@ -200,7 +192,7 @@ impl FeedFetcher {
         &self,
         feed: &str,
         cache_headers: &CacheHeaders,
-    ) -> FetchResponse<Option<u64>, FetchFeedError> {
+    ) -> FetchResponse<u64, FetchFeedError> {
         let response = self
             .client
             .get(feed)
@@ -219,11 +211,7 @@ impl FeedFetcher {
     }
 }
 
-async fn parse_rss_response(response: Response) -> Result<Option<u64>, FetchFeedError> {
-    if response.status() == StatusCode::NOT_MODIFIED {
-        return Ok(None);
-    }
-
+async fn parse_rss_response(response: Response) -> Result<u64, FetchFeedError> {
     let content = response.text().await?;
     let channel = Feed::from_str(&content).map_err(ParseFeedError::Parse)?;
 
@@ -249,5 +237,5 @@ async fn parse_rss_response(response: Response) -> Result<Option<u64>, FetchFeed
         }
     }
 
-    Ok(Some(hasher.finish()))
+    Ok(hasher.finish())
 }
