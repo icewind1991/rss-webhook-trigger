@@ -7,7 +7,7 @@ use crate::config::{Config, FeedConfig};
 use crate::error::{FetchError, FetchFeedError, HubError, ParseFeedError};
 use crate::fetcher::{next_fetch, CacheHeaders, FetchPlan, FetchResponse};
 use main_error::MainResult;
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, StatusCode};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::future::ready;
@@ -21,7 +21,7 @@ use tokio::signal::ctrl_c;
 use tokio::time::sleep;
 use tracing::{debug, error, info, instrument, warn};
 
-const FETCHER_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"), "(", env!("CARGO_PKG_REPOSITORY"), ")");
+const FETCHER_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"), " (", env!("CARGO_PKG_REPOSITORY"), ")");
 
 #[tokio::main]
 async fn main() -> MainResult {
@@ -106,7 +106,10 @@ impl FeedFetcher {
     }
 
     pub fn should_update(&self, feed: &str) -> bool {
-        self.fetch_plans.get(feed).filter(|plan| FetchPlan::elapsed(plan)).is_some()
+        match self.fetch_plans.get(feed) {
+            Some(plan) => plan.is_elapsed(),
+            None => true,
+        }
     }
 
     #[instrument(skip(self))]
@@ -130,7 +133,7 @@ impl FeedFetcher {
         };
 
         Ok(match (self.cache.get_mut(feed), new_key) {
-            (Some(cached), Some(new_key)) => {
+            (Some(cached), Some(Some(new_key))) => {
                 debug!(cached, new_key, "checked existing feed");
                 if new_key != *cached {
                     *cached = new_key;
@@ -139,11 +142,15 @@ impl FeedFetcher {
                     false
                 }
             }
-            (None, Some(new_key)) => {
+            (None, Some(Some(new_key))) => {
                 debug!(feed, "new feed");
                 self.cache.insert(feed.into(), new_key);
 
                 // don't trigger the actions on start
+                false
+            }
+            (_, Some(None)) => {
+                debug!("not modified response");
                 false
             }
             (_, None) => {
@@ -158,18 +165,21 @@ impl FeedFetcher {
         &self,
         feed: &str,
         cache_headers: &CacheHeaders,
-    ) -> FetchResponse<u64, FetchError> {
+    ) -> FetchResponse<Option<u64>, FetchError> {
         if let Some(hub) = feed.strip_prefix("docker-hub://") {
             if let Some((user, repo)) = hub.split_once('/') {
                 hub::tags(&self.client, user, repo, cache_headers)
                     .await
                     .map(|tags| {
+                        if tags.is_empty() {
+                            return ready(None);
+                        }
                         let mut hasher = DefaultHasher::new();
                         for tag in tags {
                             tag.id.hash(&mut hasher);
                             tag.last_updated.hash(&mut hasher);
                         }
-                        ready(hasher.finish())
+                        ready(Some(hasher.finish()))
                     }).await
                     .map_err(FetchError::Hub)
             } else {
@@ -190,7 +200,7 @@ impl FeedFetcher {
         &self,
         feed: &str,
         cache_headers: &CacheHeaders,
-    ) -> FetchResponse<u64, FetchFeedError> {
+    ) -> FetchResponse<Option<u64>, FetchFeedError> {
         let response = self
             .client
             .get(feed)
@@ -209,7 +219,11 @@ impl FeedFetcher {
     }
 }
 
-async fn parse_rss_response(response: Response) -> Result<u64, FetchFeedError> {
+async fn parse_rss_response(response: Response) -> Result<Option<u64>, FetchFeedError> {
+    if response.status() == StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+
     let content = response.text().await?;
     let channel = Feed::from_str(&content).map_err(ParseFeedError::Parse)?;
 
@@ -235,5 +249,5 @@ async fn parse_rss_response(response: Response) -> Result<u64, FetchFeedError> {
         }
     }
 
-    Ok(hasher.finish())
+    Ok(Some(hasher.finish()))
 }

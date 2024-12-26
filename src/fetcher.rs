@@ -84,8 +84,8 @@ pub struct FetchPlan {
 }
 
 impl FetchPlan {
-    pub fn elapsed(&self) -> bool {
-        Instant::now() > self.time
+    pub fn is_elapsed(&self) -> bool {
+        Instant::now() >= self.time
     }
 }
 

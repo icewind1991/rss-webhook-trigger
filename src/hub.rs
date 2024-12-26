@@ -1,6 +1,6 @@
 use crate::error::HubError;
 use crate::fetcher::{CacheHeaders, FetchResponse};
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use reqwest::header::{HeaderValue, USER_AGENT};
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -15,10 +15,10 @@ pub async fn tags(
     cache_headers: &CacheHeaders,
 ) -> FetchResponse<Vec<HubTag>, HubError> {
     let result = client
-        .get(format!(
+        .get(dbg!(format!(
             "https://hub.docker.com/v2/repositories/{}/{}/tags",
             user, repo
-        ))
+        )))
         .headers(cache_headers.headers())
         .header(USER_AGENT, HeaderValue::from_static(FETCHER_USER_AGENT))
         .send()
@@ -28,6 +28,9 @@ pub async fn tags(
         .map_err(HubError::Network)
         .check_status_code(HubError::ClientError, HubError::ServerError)
         .map(|response| async {
+            if response.status() == StatusCode::NOT_MODIFIED {
+                return Ok(Vec::new());
+            }
             response
                 .text()
                 .await
