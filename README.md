@@ -1,3 +1,5 @@
+# Moved to https://codeberg.org/icewind/rss-webhook-trigger
+
 # rss-webhook-trigger
 
 Trigger webhooks from rss/atom feeds.
